@@ -46,8 +46,29 @@ export const register = async (req, res) => {
     await newUser.save();
     await mailService({
       email: email,
-      subject: "Register Success 🎉",
-      html: "<b>Welcome to my website. Wish you have a good experience. </b>",
+      subject: "Welcome to WineApp! 🍷",
+      html: `
+        <div style="font-family: Arial, sans-serif; color: #333;">
+          <h2>Welcome to <span style="color: #8B0000;">WineApp</span>!</h2>
+          <p>Dear <b>${req.body.username || "user"}</b>,</p>
+          <p>
+            Thank you for registering an account with <b>WineApp</b>.<br>
+            We are excited to have you join our wine-loving community!
+          </p>
+          <p>
+            You can now explore, review, and manage your favorite wines with ease.<br>
+            If you have any questions or need support, feel free to reply to this email.
+          </p>
+          <p>
+            Cheers,<br>
+            <b>The WineApp Team</b>
+          </p>
+          <hr>
+          <small>
+            This is an automated message. Please do not reply directly to this email.
+          </small>
+        </div>
+      `
     });
     res.status(200).json({
       success: true,

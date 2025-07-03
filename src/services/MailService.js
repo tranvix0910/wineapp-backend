@@ -13,6 +13,7 @@ export const transporter = nodemailer.createTransport({
     pass: process.env.EMAIL_PASSWORD,
   },
 });
+
 export const mailService = async ({ email, subject, html }) => {
   const message = {
     from: process.env.EMAIL_NAME, // sender address
