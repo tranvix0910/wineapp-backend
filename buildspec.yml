@@ -1,0 +1,150 @@
+version: 0.2
+
+env:
+  variables:
+    AWS_DEFAULT_REGION: "ap-southeast-1"
+    AWS_ACCOUNT_ID: "022499043310"
+    ECR_LOGIN_URI: "022499043310.dkr.ecr.ap-southeast-1.amazonaws.com"
+    ECR_REPOSITORY_URI: "022499043310.dkr.ecr.ap-southeast-1.amazonaws.com/workshop-2/wineapp-backend"
+    CONFIG_REPO_URL: "https://github.com/tranvix0910/wineapp-backend-config.git"
+  secrets-manager:
+    GITHUB_TOKEN: "workshop-2-github-access-token:token"
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: latest
+    commands:
+      - echo Install phase started on `date`
+      - echo Installing dependencies...
+      - npm install
+      - echo Installing git...
+      - apt-get update
+      - apt-get install -y git curl
+  pre_build:
+    commands:
+      - echo Pre-build phase started on `date`
+      
+      # Agent Information
+      - echo "Running on CodeBuild agent"
+      - echo "Workspace $CODEBUILD_SRC_DIR"
+      - whoami
+      - pwd
+      - uname -a
+      
+      # Checkout Source Code (already done by CodeBuild)
+      - echo "Source code already checked out by CodeBuild"
+      - ls -la
+      
+      # Get Git Tag Version Stage
+      - echo "Getting Git tag version..."
+      - git log --oneline -n 5
+      - git tag --list
+      - >
+        TAG_VERSION=$(git describe --tags --exact-match 2>/dev/null || git describe --tags --abbrev=0 2>/dev/null || git rev-parse --short HEAD);
+        echo "Using tag version: $TAG_VERSION";
+        echo "Docker image will be: $ECR_REPOSITORY_URI:$TAG_VERSION";
+        export TAG_NAME=$TAG_VERSION
+      - echo "TAG_NAME=$TAG_NAME"
+      
+      # Verify Backend Files
+      - echo "Checking backend files..."
+      - >
+        if [ -f "package.json" ]; then
+          echo "package.json found!";
+          head -10 package.json;
+        else
+          echo "ERROR: package.json not found! This doesn't appear to be a Node.js project.";
+          exit 1;
+        fi
+      - >
+        if [ -f "Dockerfile" ]; then
+          echo "Dockerfile found!";
+          head -10 Dockerfile;
+        else
+          echo "ERROR: Dockerfile not found! Please create Dockerfile in repository root.";
+          exit 1;
+        fi
+      
+      # Check Docker (Docker is available in CodeBuild)
+      - echo "Checking Docker availability..."
+      - docker --version
+      - docker info
+      
+      # ECR Login
+      - echo "Logging in to Amazon ECR..."
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_LOGIN_URI
+      
+  build:
+    commands:
+      - echo Build phase started on `date`
+      
+      # Build Docker Image
+      - echo "Building backend Docker image $ECR_REPOSITORY_URI:$TAG_NAME"
+      - docker build -t $ECR_REPOSITORY_URI:$TAG_NAME .
+      
+      - echo "Backend Docker image built successfully!"
+      - docker images | grep $ECR_REPOSITORY_URI
+      
+      # Test Docker Image
+      - echo "Testing backend Docker image..."
+      - docker run --rm -d --name test-backend-$CODEBUILD_BUILD_NUMBER -p 4000:4000 $ECR_REPOSITORY_URI:$TAG_NAME
+      - sleep 5
+      - curl -f http://localhost:4000/api/v1 || echo "Backend test completed"
+      - docker stop test-backend-$CODEBUILD_BUILD_NUMBER || true
+      - docker rm test-backend-$CODEBUILD_BUILD_NUMBER || true
+      
+  post_build:
+    commands:
+      - echo Post-build phase started on `date`
+      
+      # Push to ECR
+      - echo "Pushing backend image to ECR..."
+      - docker push $ECR_REPOSITORY_URI:$TAG_NAME
+      - echo "✅ Successfully pushed backend image to ECR!"
+      
+      # Clone Config Repo
+      - echo "Cloning backend config repository..."
+      - mkdir -p config-repo
+      - cd config-repo
+      - git clone $CONFIG_REPO_URL .
+      - git config user.email "tranvix.work@gmail.com"
+      - git config user.name "Tran Dai Vi - N22DCCI044"
+      - echo "Backend config repo cloned successfully!"
+      - ls -la
+      
+      # Update Backend Helm Values
+      - echo "Updating backend Helm values with new image version..."
+      - echo "Current backend helm values:"
+      - cat helm-values/values-prod.yaml | grep -A3 -B3 tag || echo "Tag not found in current format"
+      - >
+        sed -i "s/^  tag.*/  tag: \"$TAG_NAME\"/" helm-values/values-prod.yaml
+      - echo "Updated backend helm values:"
+      - cat helm-values/values-prod.yaml | grep -A3 -B3 tag
+      - git diff helm-values/values-prod.yaml || echo "No changes detected"
+      - echo "Backend Helm values updated successfully!"
+      
+      # Push Backend Config Changes
+      - echo "Pushing backend changes to config repository..."
+      - echo "GitHub token is securely loaded from Secrets Manager"
+      - >
+        GIT_STATUS=$(git status --porcelain);
+        if [ -n "$GIT_STATUS" ]; then
+          echo "Backend changes detected, committing and pushing...";
+          git add .;
+          git commit -m "Update backend image version to $TAG_NAME - Updated helm-values/values-prod.yaml - Image: $ECR_REPOSITORY_URI:$TAG_NAME - Build: $CODEBUILD_BUILD_NUMBER - CodeBuild Project: $CODEBUILD_BUILD_ID - Backend deployment update";
+          git remote set-url origin https://$GITHUB_TOKEN@github.com/tranvix0910/wineapp-backend-config.git;
+          git push origin main;
+          echo "Backend config changes pushed successfully!";
+        else
+          echo "No changes detected in backend config repo";
+        fi
+      
+      - cd ..
+      - echo "Build completed on `date`"
+      - echo "Image pushed $ECR_REPOSITORY_URI:$TAG_NAME"
+      - echo "FRONTEND BUILD SUCCESS!"
+      - echo "Backend source code built and pushed $ECR_REPOSITORY_URI:$TAG_NAME"
+      - echo "Backend config repository updated with new version"
+      - echo "ECR Repository $ECR_REPOSITORY_URI"
+      - echo "Backend ready for deployment!"
