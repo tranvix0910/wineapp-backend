@@ -17,7 +17,7 @@ import UserRoutes from "./routes/user.js";
 import WineRoutes from "./routes/wine.js";
 dotenv.config();
 
-const port = process.env.PORT || 8000;
+const port = process.env.PORT || 4000;
 
 const app = express();
 // database
@@ -54,6 +54,11 @@ app.use("/api/v1/otp", OtpRoutes);
 app.use("/api/v1/reviews", ReviewRoutes);
 app.use("/api/v1/user", UserRoutes);
 app.use("/api/v1/wines", WineRoutes);
+
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() });
+  console.log('Health check successful');
+});
 
 connectDB().then(() => {
   app.listen(port, () => {
