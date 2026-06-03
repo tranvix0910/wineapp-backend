@@ -23,11 +23,16 @@ const app = express();
 // database
 mongoose.set("strictQuery", false);
 const connectDB = async () => {
-  try {
-    await mongoose.connect(process.env.MONGO_CONNECTION);
-    console.log("connect to database successfull");
-  } catch (error) {
-    console.log("connect to database failed", error.message);
+  while (true) {
+    try {
+      await mongoose.connect(process.env.MONGO_CONNECTION);
+      console.log("connect to database successfull");
+      break;
+    } catch (error) {
+      console.log("connect to database failed", error.message);
+      console.log("Retrying in 5 seconds...");
+      await new Promise(res => setTimeout(res, 5000));
+    }
   }
 };
 
